@@ -44,6 +44,11 @@ jobs:
         run: |
           git config user.name  "fly-bot"
           git config user.email "fly-bot@users.noreply.github.com"
+
+          # Если файл состояния ещё не существует — создаём пустой,
+          # чтобы git add не падал с "pathspec did not match any files"
+          touch fly_bot_state.json
+
           git add fly_bot_state.json
           # Коммитим только если файл реально изменился
           git diff --cached --quiet || git commit -m "chore: update bot state [skip ci]"
