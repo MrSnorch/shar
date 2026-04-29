@@ -60,10 +60,12 @@ def fetch_schedule() -> Optional[list[dict]]:
         "Accept": "application/json",
         "Origin": "https://sunflower-land.com",
         "Referer": "https://sunflower-land.com/",
+        # Этот заголовок обязателен — без него API возвращает 401
+        "x-transaction-id": "undefined",
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
+            "Chrome/146.0.0.0 Safari/537.36 OPR/130.0.0.0"
         ),
     }
     try:
