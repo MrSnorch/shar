@@ -16,7 +16,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-import requests
+from curl_cffi import requests  # Chrome TLS fingerprint, иначе сервер отдаёт 401
 
 # ─── Настройки ───────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN", "")
@@ -69,7 +69,10 @@ def fetch_schedule() -> Optional[list[dict]]:
         ),
     }
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        resp = requests.post(
+            url, json=payload, headers=headers, timeout=15,
+            impersonate="chrome110",  # имитируем TLS-отпечаток Chrome
+        )
         resp.raise_for_status()
         data = resp.json()
         schedule = _extract_schedule(data)
