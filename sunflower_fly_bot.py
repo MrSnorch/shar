@@ -116,7 +116,7 @@ def format_schedule_message(schedule: list[dict]) -> str:
         if end_dt < now:
             lines.append(f"<s>{label}</s>")
         elif active:
-            lines.append(f"🟡 <b>{label} — в воздухе!</b>")
+            lines.append(f"🟢 <b>{label} — прилетел!</b>")
         else:
             lines.append(label)
 
