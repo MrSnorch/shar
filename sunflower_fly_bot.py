@@ -180,7 +180,7 @@ def format_schedule_message(schedule: list[dict]) -> str:
     for slot in sorted(schedule, key=lambda s: s["startAt"]):
         start_dt, end_dt, label, active = _slot_parts(slot, now)
         if active:
-            return f"🟢 <b>{label} — прилетел!</b>"
+            return f"❤️ <b>{label} — прилетел!</b>"
 
     # Иначе — ближайший предстоящий
     upcoming = sorted(
@@ -292,10 +292,10 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
 
         # Рейс начался (или только что наступил после ожидания)
         if start_dt <= datetime.now(timezone.utc) <= end_dt:
-            # Шаг 3 (как в тест-скрипте): редактируем закреп на «🟢 прилетел!»
+            # Шаг 3 (как в тест-скрипте): редактируем закреп на «❤️ прилетел!»
             pinned_id = state.get("message_id")
             if pinned_id:
-                active_text = format_schedule_message(schedule)  # вернёт 🟢 т.к. рейс активен
+                active_text = format_schedule_message(schedule)  # вернёт ❤️ т.к. рейс активен
                 log.info("Редактирую закреплённое сообщение на активный рейс...")
                 edit_message(pinned_id, active_text)
 
