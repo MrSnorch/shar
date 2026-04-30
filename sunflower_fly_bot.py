@@ -16,7 +16,8 @@ import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from curl_cffi import requests  # Chrome TLS fingerprint, иначе сервер отдаёт 401
+import requests as _requests         # для Telegram (не нужен TLS fingerprint)
+from curl_cffi import requests as cffi_requests  # Chrome TLS fingerprint для Sunflower API
 
 # ─── Настройки ───────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN", "")
@@ -68,10 +69,15 @@ def fetch_schedule() -> Optional[list[dict]]:
             "Chrome/146.0.0.0 Safari/537.36 OPR/130.0.0.0"
         ),
     }
+    # Bearer JWT из MetaMask/кошелька — живёт несколько дней/недель
+    bearer = os.getenv("SUNFLOWER_BEARER", "")
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+
     try:
-        resp = requests.post(
+        resp = cffi_requests.post(
             url, json=payload, headers=headers, timeout=15,
-            impersonate="chrome110",  # имитируем TLS-отпечаток Chrome
+            impersonate="chrome110",
         )
         resp.raise_for_status()
         data = resp.json()
@@ -80,7 +86,7 @@ def fetch_schedule() -> Optional[list[dict]]:
             log.warning("floatingIsland.schedule не найден в ответе")
             log.debug("Ключи верхнего уровня: %s", list(data.keys())[:20])
         return schedule
-    except requests.RequestException as e:
+    except Exception as e:
         log.error("Ошибка запроса к API: %s", e)
         return None
     except (KeyError, ValueError) as e:
@@ -180,13 +186,13 @@ def schedule_key(schedule: list[dict]) -> str:
 def tg(method: str, **kwargs) -> Optional[dict]:
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
     try:
-        resp = requests.post(url, json=kwargs, timeout=10)
+        resp = _requests.post(url, json=kwargs, timeout=10)
         result = resp.json()
         if not result.get("ok"):
             log.error("Telegram [%s]: %s", method, result.get("description"))
             return None
         return result
-    except requests.RequestException as e:
+    except Exception as e:
         log.error("Telegram request failed [%s]: %s", method, e)
         return None
 
