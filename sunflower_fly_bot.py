@@ -35,6 +35,7 @@ DISPLAY_UTC_OFFSET   = 3
 DISPLAY_TZ_NAME      = "Kyiv"
 STATE_FILE           = "fly_bot_state.json"
 ARRIVAL_WINDOW_MIN   = 12   # окно «свежего» прилёта в минутах
+ARRIVAL_DELETE_MIN   = 30   # через сколько минут удалять уведомление о прилёте
 EARLY_START_MIN      = 2    # запускаемся за N минут до рейса
 FALLBACK_CHECK_HOURS = 6    # резервный интервал если рейсов нет
 TOKEN_WARN_HOURS     = 24   # за сколько часов предупреждать об истечении токена
@@ -228,6 +229,14 @@ def send_message(text: str, pin: bool = False) -> Optional[int]:
     return None
 
 
+def delete_message(message_id: int) -> bool:
+    result = tg("deleteMessage", chat_id=TELEGRAM_CHANNEL_ID, message_id=message_id)
+    if result:
+        log.info("Удалено message_id=%d", message_id)
+        return True
+    return False
+
+
 def edit_message(message_id: int, text: str) -> bool:
     result = tg(
         "editMessageText",
@@ -245,11 +254,10 @@ def edit_message(message_id: int, text: str) -> bool:
 # ─── Уведомления о прилёте ────────────────────────────────────────────────────
 
 def _wait_and_notify(schedule: list[dict], state: dict) -> None:
-    """Ждёт точного времени старта ближайшего рейса, затем отправляет уведомление."""
+    """Отправляет уведомление о прилёте и планирует его удаление через следующий запуск."""
     import time as _time
 
     now      = datetime.now(timezone.utc)
-    window   = timedelta(minutes=ARRIVAL_WINDOW_MIN)
     notified = set(state.get("notified_arrivals", []))
 
     for slot in sorted(schedule, key=lambda s: s["startAt"]):
@@ -272,18 +280,42 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
         # Рейс начался (или только что наступил после ожидания)
         if start_dt <= datetime.now(timezone.utc) <= end_dt:
             log.info("Шар прилетел! Отправляю уведомление...")
-            send_message(format_arrival_message(slot))
+            msg_id = send_message(format_arrival_message(slot))
             notified.add(slot_id)
+            if msg_id:
+                delete_after = datetime.now(timezone.utc) + timedelta(minutes=ARRIVAL_DELETE_MIN)
+                state["arrival_msg_id"]    = msg_id
+                state["arrival_delete_ts"] = delete_after.timestamp()
+                log.info("Удаление запланировано на %s UTC", delete_after.strftime("%H:%M"))
             break  # уведомляем только об одном рейсе за запуск
 
     current_ids = {str(s["startAt"]) for s in schedule}
     state["notified_arrivals"] = list(notified & current_ids)
 
 
+def _maybe_delete_arrival(state: dict) -> None:
+    """Удаляет уведомление о прилёте если наступило время, сохранённое в стейте."""
+    msg_id    = state.get("arrival_msg_id")
+    delete_ts = state.get("arrival_delete_ts")
+    if not msg_id or not delete_ts:
+        return
+
+    if datetime.now(timezone.utc).timestamp() >= delete_ts:
+        log.info("Удаляю уведомление о прилёте (message_id=%d)...", msg_id)
+        delete_message(msg_id)
+        state["arrival_msg_id"]    = None
+        state["arrival_delete_ts"] = None
+    else:
+        remaining = delete_ts - datetime.now(timezone.utc).timestamp()
+        log.info("Уведомление о прилёте будет удалено через %.0f сек", remaining)
+
+
 # ─── cron-job.org перепланирование ───────────────────────────────────────────
 
-def reschedule_cronjob(schedule: list[dict]) -> None:
-    """Обновляет расписание задания на cron-job.org на точное время следующего рейса."""
+def reschedule_cronjob(schedule: list[dict], state: dict) -> None:
+    """Обновляет расписание задания на cron-job.org.
+    Учитывает запланированное удаление уведомления о прилёте — выбирает ближайшее из событий.
+    """
     if not CRONJOB_API_KEY or not CRONJOB_JOB_ID:
         log.debug("CRONJOB_API_KEY / CRONJOB_JOB_ID не заданы — пропускаю")
         return
@@ -297,9 +329,20 @@ def reschedule_cronjob(schedule: list[dict]) -> None:
         if datetime.fromtimestamp(s["startAt"] / 1000, tz=timezone.utc) > now
     ])
 
+    candidates = []
+
     if upcoming:
-        next_dt = upcoming[0] - timedelta(minutes=EARLY_START_MIN)
-        reason  = f"следующий рейс в {upcoming[0].strftime('%H:%M UTC')} (запуск в {next_dt.strftime('%H:%M UTC')})"
+        flight_dt = upcoming[0] - timedelta(minutes=EARLY_START_MIN)
+        candidates.append((flight_dt, f"следующий рейс в {upcoming[0].strftime('%H:%M UTC')} (запуск в {flight_dt.strftime('%H:%M UTC')})"))
+
+    delete_ts = state.get("arrival_delete_ts")
+    if delete_ts:
+        delete_dt = datetime.fromtimestamp(delete_ts, tz=timezone.utc)
+        if delete_dt > now:
+            candidates.append((delete_dt, f"удаление уведомления в {delete_dt.strftime('%H:%M UTC')}"))
+
+    if candidates:
+        next_dt, reason = min(candidates, key=lambda x: x[0])
     else:
         next_dt = fallback_dt
         reason  = f"нет рейсов → резервная проверка через {FALLBACK_CHECK_HOURS}ч"
@@ -335,7 +378,13 @@ def load_state() -> dict:
         with open(STATE_FILE) as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"message_id": None, "schedule_key": None, "notified_arrivals": []}
+        return {
+            "message_id": None,
+            "schedule_key": None,
+            "notified_arrivals": [],
+            "arrival_msg_id": None,
+            "arrival_delete_ts": None,
+        }
 
 
 def save_state(state: dict) -> None:
@@ -366,10 +415,13 @@ def run() -> None:
     new_key = schedule_key(schedule)
     text    = format_schedule_message(schedule)
 
-    # 1) Ждём точного времени рейса если запустились раньше, потом уведомляем
+    # 1) Удаляем уведомление о прилёте если пришло время
+    _maybe_delete_arrival(state)
+
+    # 2) Ждём точного времени рейса если запустились раньше, потом уведомляем
     _wait_and_notify(schedule, state)
 
-    # 2) Закреплённое сообщение с расписанием
+    # 3) Закреплённое сообщение с расписанием
     if state["message_id"] is None:
         log.info("Первый запуск — отправляю сообщение...")
         msg_id = send_message(text, pin=True)
@@ -392,8 +444,8 @@ def run() -> None:
         log.info("Расписание не изменилось, обновляю время...")
         edit_message(state["message_id"], text)
 
-    # 3) Перепланируем cron-job.org на следующий рейс
-    reschedule_cronjob(schedule)
+    # 4) Перепланируем cron-job.org на ближайшее событие (рейс или удаление)
+    reschedule_cronjob(schedule, state)
 
     save_state(state)
 
