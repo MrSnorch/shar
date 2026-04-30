@@ -103,10 +103,7 @@ def _slot_parts(slot: dict, now: datetime):
     end_dt   = datetime.fromtimestamp(slot["endAt"]   / 1000, tz=timezone.utc)
     start_l  = start_dt.astimezone(DISPLAY_TZ)
     end_l    = end_dt.astimezone(DISPLAY_TZ)
-    label    = (
-        f"{WEEKDAYS[start_l.weekday()]} {start_l.strftime('%d.%m')} "
-        f"🕐 {start_l.strftime('%H:%M')} – {end_l.strftime('%H:%M')}"
-    )
+    label    = f"{start_l.strftime('%H:%M')} – {end_l.strftime('%H:%M')} | {start_l.strftime('%d.%m.%y')}"
     return start_dt, end_dt, label, start_dt <= now <= end_dt
 
 
