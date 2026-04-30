@@ -169,24 +169,29 @@ def _slot_parts(slot: dict, now: datetime):
     end_dt   = datetime.fromtimestamp(slot["endAt"]   / 1000, tz=timezone.utc)
     start_l  = start_dt.astimezone(DISPLAY_TZ)
     end_l    = end_dt.astimezone(DISPLAY_TZ)
-    label    = f"{start_l.strftime('%H:%M')} – {end_l.strftime('%H:%M')} | {start_l.strftime('%d.%m.%y')}"
+    label    = f"{start_l.strftime('%H:%M')} – {end_l.strftime('%H:%M')}"
     return start_dt, end_dt, label, start_dt <= now <= end_dt
 
 
 def format_schedule_message(schedule: list[dict]) -> str:
-    now   = datetime.now(timezone.utc)
-    lines = []
+    now = datetime.now(timezone.utc)
 
-    for slot in schedule:
+    # Сначала ищем активный рейс
+    for slot in sorted(schedule, key=lambda s: s["startAt"]):
         start_dt, end_dt, label, active = _slot_parts(slot, now)
-        if end_dt < now:
-            lines.append(f"<s>{label}</s>")
-        elif active:
-            lines.append(f"🟢 <b>{label} — прилетел!</b>")
-        else:
-            lines.append(label)
+        if active:
+            return f"🟢 <b>{label} — прилетел!</b>"
 
-    return "\n".join(lines)
+    # Иначе — ближайший предстоящий
+    upcoming = sorted(
+        [s for s in schedule if datetime.fromtimestamp(s["startAt"] / 1000, tz=timezone.utc) > now],
+        key=lambda s: s["startAt"],
+    )
+    if upcoming:
+        _, _, label, _ = _slot_parts(upcoming[0], now)
+        return label
+
+    return "—"
 
 
 def format_arrival_message(slot: dict) -> str:
