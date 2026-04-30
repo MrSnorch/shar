@@ -16,8 +16,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-        # Используем встроенный GITHUB_TOKEN — он уже имеет contents: write.
-        # Отдельный GH_PAT не нужен.
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -25,12 +23,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install curl_cffi
+        run: pip install requests curl_cffi
 
       - name: Run bot
         env:
           TELEGRAM_TOKEN:      ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          SUNFLOWER_BEARER:    ${{ secrets.SUNFLOWER_BEARER }}
         run: python sunflower_fly_bot.py
 
       - name: Commit state if changed
