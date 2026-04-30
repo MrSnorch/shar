@@ -7,6 +7,7 @@ Sunflower Land — Floating Island Flight Schedule Bot
 GitHub Secrets:
   TELEGRAM_TOKEN        — токен бота от @BotFather
   TELEGRAM_CHANNEL_ID   — @channel или -1001234567890
+  SUNFLOWER_BEARER      — JWT из заголовка Authorization в DevTools
   CRONJOB_API_KEY       — API-ключ с cron-job.org
   CRONJOB_JOB_ID        — числовой ID задания на cron-job.org
 """
@@ -24,6 +25,7 @@ from curl_cffi import requests as cffi_requests  # Chrome TLS fingerprint для
 # ─── Настройки ───────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
+SUNFLOWER_BEARER    = os.getenv("SUNFLOWER_BEARER", "")
 
 CRONJOB_API_KEY     = os.getenv("CRONJOB_API_KEY", "")
 CRONJOB_JOB_ID      = os.getenv("CRONJOB_JOB_ID", "")
@@ -50,15 +52,10 @@ WEEKDAYS   = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 # ─── Sunflower Land API ───────────────────────────────────────────────────────
 
 def fetch_schedule() -> Optional[list[dict]]:
-    """Запрашивает floatingIsland.schedule с API Sunflower Land (без авторизации)."""
+    """Запрашивает floatingIsland.schedule с API Sunflower Land."""
     client_version = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
     url     = "https://api.sunflower-land.com/session"
-    payload = {
-        "clientVersion": client_version,
-        "timezone":      "Europe/Kiev",
-        "wallet":        "MetaMask",
-        "language":      "en",
-    }
+    payload = {"clientVersion": client_version, "timezone": "Europe/Kiev", "language": "en"}
     headers = {
         "Content-Type":     "application/json;charset=UTF-8",
         "Accept":           "application/json",
@@ -68,9 +65,11 @@ def fetch_schedule() -> Optional[list[dict]]:
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/147.0.0.0 Safari/537.36"
+            "Chrome/146.0.0.0 Safari/537.36 OPR/130.0.0.0"
         ),
     }
+    if SUNFLOWER_BEARER:
+        headers["Authorization"] = f"Bearer {SUNFLOWER_BEARER}"
 
     try:
         resp = cffi_requests.post(
@@ -186,6 +185,7 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
     import time as _time
 
     now      = datetime.now(timezone.utc)
+    window   = timedelta(minutes=ARRIVAL_WINDOW_MIN)
     notified = set(state.get("notified_arrivals", []))
 
     for slot in sorted(schedule, key=lambda s: s["startAt"]):
