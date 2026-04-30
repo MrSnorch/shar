@@ -1,11 +1,9 @@
 name: Sunflower Fly Bot
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:          # вызывается вручную и через cron-job.org
   schedule:
-    - cron: "*/10 * * * *"
-  repository_dispatch:
-    types: [fly_bot_run]
+    - cron: "0 */6 * * *"    # резервный запуск раз в 6 часов
 
 jobs:
   run-bot:
@@ -30,6 +28,8 @@ jobs:
           TELEGRAM_TOKEN:      ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           SUNFLOWER_BEARER:    ${{ secrets.SUNFLOWER_BEARER }}
+          CRONJOB_API_KEY:     ${{ secrets.CRONJOB_API_KEY }}
+          CRONJOB_JOB_ID:      ${{ secrets.CRONJOB_JOB_ID }}
         run: python sunflower_fly_bot.py
 
       - name: Commit state if changed
