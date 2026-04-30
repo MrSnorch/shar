@@ -284,6 +284,13 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
 
         # Рейс начался (или только что наступил после ожидания)
         if start_dt <= datetime.now(timezone.utc) <= end_dt:
+            # Шаг 3 (как в тест-скрипте): редактируем закреп на «🟢 прилетел!»
+            pinned_id = state.get("message_id")
+            if pinned_id:
+                active_text = format_schedule_message(schedule)  # вернёт 🟢 т.к. рейс активен
+                log.info("Редактирую закреплённое сообщение на активный рейс...")
+                edit_message(pinned_id, active_text)
+
             log.info("Шар прилетел! Отправляю уведомление...")
             msg_id = send_message(format_arrival_message(slot))
             notified.add(slot_id)
@@ -298,7 +305,7 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
     state["notified_arrivals"] = list(notified & current_ids)
 
 
-def _maybe_delete_arrival(state: dict) -> None:
+def _maybe_delete_arrival(state: dict, schedule: Optional[list] = None) -> None:
     """Удаляет уведомление о прилёте если наступило время, сохранённое в стейте."""
     msg_id    = state.get("arrival_msg_id")
     delete_ts = state.get("arrival_delete_ts")
@@ -310,6 +317,13 @@ def _maybe_delete_arrival(state: dict) -> None:
         delete_message(msg_id)
         state["arrival_msg_id"]    = None
         state["arrival_delete_ts"] = None
+
+        # Шаг 5 (как в тест-скрипте): обновляем закреп на следующий рейс
+        pinned_id = state.get("message_id")
+        if pinned_id and schedule:
+            next_text = format_schedule_message(schedule)
+            log.info("Обновляю закреплённое сообщение на следующий рейс...")
+            edit_message(pinned_id, next_text)
     else:
         remaining = delete_ts - datetime.now(timezone.utc).timestamp()
         log.info("Уведомление о прилёте будет удалено через %.0f сек", remaining)
@@ -421,7 +435,7 @@ def run() -> None:
     text    = format_schedule_message(schedule)
 
     # 1) Удаляем уведомление о прилёте если пришло время
-    _maybe_delete_arrival(state)
+    _maybe_delete_arrival(state, schedule)
 
     # 2) Закреплённое сообщение с расписанием — отправляем сразу
     if state["message_id"] is None:
