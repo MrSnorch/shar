@@ -418,10 +418,7 @@ def run() -> None:
     # 1) Удаляем уведомление о прилёте если пришло время
     _maybe_delete_arrival(state)
 
-    # 2) Ждём точного времени рейса если запустились раньше, потом уведомляем
-    _wait_and_notify(schedule, state)
-
-    # 3) Закреплённое сообщение с расписанием
+    # 2) Закреплённое сообщение с расписанием — отправляем сразу
     if state["message_id"] is None:
         log.info("Первый запуск — отправляю сообщение...")
         msg_id = send_message(text, pin=True)
@@ -444,7 +441,13 @@ def run() -> None:
         log.info("Расписание не изменилось, обновляю время...")
         edit_message(state["message_id"], text)
 
-    # 4) Перепланируем cron-job.org на ближайшее событие (рейс или удаление)
+    # 3) Сохраняем стейт до ожидания — message_id уже зафиксирован
+    save_state(state)
+
+    # 4) Ждём точного времени рейса если запустились раньше, потом уведомляем
+    _wait_and_notify(schedule, state)
+
+    # 5) Перепланируем cron-job.org на ближайшее событие (рейс или удаление)
     reschedule_cronjob(schedule, state)
 
     save_state(state)
