@@ -12,6 +12,7 @@ GitHub Secrets:
   CRONJOB_JOB_ID        — числовой ID задания на cron-job.org
 """
 
+import base64
 import json
 import logging
 import os
@@ -36,6 +37,7 @@ STATE_FILE           = "fly_bot_state.json"
 ARRIVAL_WINDOW_MIN   = 12   # окно «свежего» прилёта в минутах
 EARLY_START_MIN      = 2    # запускаемся за N минут до рейса
 FALLBACK_CHECK_HOURS = 6    # резервный интервал если рейсов нет
+TOKEN_WARN_HOURS     = 24   # за сколько часов предупреждать об истечении токена
 # ─────────────────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -47,6 +49,68 @@ log = logging.getLogger(__name__)
 
 DISPLAY_TZ = timezone(timedelta(hours=DISPLAY_UTC_OFFSET))
 WEEKDAYS   = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+
+# ─── Проверка Bearer токена ───────────────────────────────────────────────────
+
+def check_bearer_expiry() -> None:
+    """Проверяет срок действия SUNFLOWER_BEARER и уведомляет в канал если истёк или истекает."""
+    if not SUNFLOWER_BEARER:
+        log.warning("SUNFLOWER_BEARER не задан — пропускаю проверку токена")
+        return
+
+    try:
+        # JWT состоит из header.payload.signature — декодируем payload (часть [1])
+        parts = SUNFLOWER_BEARER.split(".")
+        if len(parts) != 3:
+            log.warning("SUNFLOWER_BEARER не похож на JWT (частей: %d)", len(parts))
+            return
+
+        payload_b64 = parts[1]
+        # Дополняем до кратного 4 (base64 padding)
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+
+        exp_ts = payload.get("exp")
+        if not exp_ts:
+            log.warning("В SUNFLOWER_BEARER нет поля 'exp' — проверка срока невозможна")
+            return
+
+        exp_dt = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+        now    = datetime.now(timezone.utc)
+        diff   = exp_dt - now
+
+        log.info(
+            "Bearer токен истекает: %s UTC (через %s)",
+            exp_dt.strftime("%d.%m.%Y %H:%M"),
+            diff,
+        )
+
+        if now >= exp_dt:
+            # Токен уже истёк
+            expired_ago = now - exp_dt
+            hours_ago   = int(expired_ago.total_seconds() // 3600)
+            send_message(
+                "⚠️ <b>Bearer токен истёк!</b>\n\n"
+                f"Срок действия закончился <b>{exp_dt.astimezone(DISPLAY_TZ).strftime('%d.%m.%Y %H:%M')} ({DISPLAY_TZ_NAME})</b>"
+                f" — {hours_ago} ч. назад.\n\n"
+                "🔑 Обнови токен в GitHub Secrets → <code>SUNFLOWER_BEARER</code>.\n"
+                "Инструкция: DevTools → Network → любой запрос к api.sunflower-land.com → заголовок <code>Authorization</code>."
+            )
+        elif diff <= timedelta(hours=TOKEN_WARN_HOURS):
+            # Токен истекает в ближайшие TOKEN_WARN_HOURS часов
+            hours_left = int(diff.total_seconds() // 3600)
+            mins_left  = int((diff.total_seconds() % 3600) // 60)
+            send_message(
+                f"⏰ <b>Bearer токен скоро истечёт!</b>\n\n"
+                f"Осталось: <b>{hours_left} ч. {mins_left} мин.</b>\n"
+                f"Истекает: <b>{exp_dt.astimezone(DISPLAY_TZ).strftime('%d.%m.%Y %H:%M')} ({DISPLAY_TZ_NAME})</b>.\n\n"
+                "🔑 Обнови токен в GitHub Secrets → <code>SUNFLOWER_BEARER</code>.\n"
+                "Инструкция: DevTools → Network → любой запрос к api.sunflower-land.com → заголовок <code>Authorization</code>."
+            )
+
+    except Exception as e:
+        log.error("Не удалось проверить срок Bearer токена: %s", e)
 
 
 # ─── Sunflower Land API ───────────────────────────────────────────────────────
@@ -127,7 +191,7 @@ def format_schedule_message(schedule: list[dict]) -> str:
 def format_arrival_message(slot: dict) -> str:
     end_dt = datetime.fromtimestamp(slot["endAt"] / 1000, tz=timezone.utc)
     end_l  = end_dt.astimezone(DISPLAY_TZ)
-    return f"🎈 <b>Шар прилетел!</b>\n\nУспей слетать до {end_l.strftime('%H:%M')}!"
+    return f"🎈 <b>Шар прилетел! Успей слетать до {end_l.strftime('%H:%M')}!</b>"
 
 
 def schedule_key(schedule: list[dict]) -> str:
@@ -286,6 +350,9 @@ def run() -> None:
     if not TELEGRAM_TOKEN or not TELEGRAM_CHANNEL_ID:
         log.error("TELEGRAM_TOKEN и TELEGRAM_CHANNEL_ID должны быть заданы!")
         sys.exit(1)
+
+    # Проверяем срок действия Bearer токена
+    check_bearer_expiry()
 
     log.info("Запрашиваю расписание...")
     schedule = fetch_schedule()
