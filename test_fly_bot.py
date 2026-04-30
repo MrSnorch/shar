@@ -125,39 +125,41 @@ def run_test() -> None:
     start_dt = now + timedelta(seconds=WAIT_SEC)
     end_dt   = start_dt + timedelta(seconds=FLIGHT_SEC)
 
+    # Следующий слот — через 8 часов (как в реальном расписании)
+    next_start_dt = now + timedelta(hours=8)
+    next_end_dt   = next_start_dt + timedelta(minutes=30)
+
     log.info("=" * 50)
     log.info("ТЕСТ: полный цикл шара")
     log.info("  Прилёт через:    %d сек (%s)", WAIT_SEC,   start_dt.astimezone(DISPLAY_TZ).strftime("%H:%M:%S"))
     log.info("  Длительность:    %d сек", FLIGHT_SEC)
     log.info("  Удаление через:  %d сек после прилёта", DELETE_SEC)
+    log.info("  След. рейс:      %s", fmt_upcoming(next_start_dt, next_end_dt))
     log.info("=" * 50)
 
     # ── Шаг 1: закреплённое сообщение «ожидание» ──────────────────────────────
-    log.info("[1/4] Отправляю закреплённое сообщение (ближайший рейс)...")
-    pinned_text  = fmt_upcoming(start_dt, end_dt)
-    pinned_msg_id = send_message(pinned_text, pin=True)
+    log.info("[1/5] Отправляю закреплённое сообщение (ближайший рейс)...")
+    pinned_msg_id = send_message(fmt_upcoming(start_dt, end_dt), pin=True)
     if not pinned_msg_id:
         log.error("Не удалось отправить закреплённое сообщение, выхожу")
         return
 
     # ── Шаг 2: ждём прилёта ───────────────────────────────────────────────────
-    log.info("[2/4] Жду %d сек до прилёта...", WAIT_SEC)
+    log.info("[2/5] Жду %d сек до прилёта...", WAIT_SEC)
     for remaining in range(WAIT_SEC, 0, -1):
         print(f"\r  Осталось: {remaining} сек  ", end="", flush=True)
         time.sleep(1)
     print()
 
     # ── Шаг 3: редактируем закреп + отправляем уведомление о прилёте ──────────
-    log.info("[3/4] Шар прилетел!")
-
+    log.info("[3/5] Шар прилетел!")
     log.info("      Редактирую закреплённое сообщение...")
     edit_message(pinned_msg_id, fmt_active(start_dt, end_dt))
-
     log.info("      Отправляю уведомление о прилёте...")
     arrival_msg_id = send_message(fmt_arrival(end_dt))
 
     # ── Шаг 4: ждём и удаляем уведомление ─────────────────────────────────────
-    log.info("[4/4] Жду %d сек, потом удаляю уведомление...", DELETE_SEC)
+    log.info("[4/5] Жду %d сек, потом удаляю уведомление...", DELETE_SEC)
     for remaining in range(DELETE_SEC, 0, -1):
         print(f"\r  Осталось: {remaining} сек  ", end="", flush=True)
         time.sleep(1)
@@ -166,9 +168,13 @@ def run_test() -> None:
     if arrival_msg_id:
         delete_message(arrival_msg_id)
 
+    # ── Шаг 5: обновляем закреп на следующий рейс ─────────────────────────────
+    log.info("[5/5] Обновляю закреплённое сообщение на следующий рейс...")
+    edit_message(pinned_msg_id, fmt_upcoming(next_start_dt, next_end_dt))
+
     log.info("=" * 50)
     log.info("ТЕСТ ЗАВЕРШЁН ✓")
-    log.info("Закреплённое сообщение (id=%d) осталось в канале.", pinned_msg_id)
+    log.info("Закреплённое сообщение (id=%d) показывает следующий рейс.", pinned_msg_id)
     log.info("=" * 50)
 
 
