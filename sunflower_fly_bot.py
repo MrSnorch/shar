@@ -112,48 +112,24 @@ def _slot_parts(slot: dict, now: datetime):
 
 def format_schedule_message(schedule: list[dict]) -> str:
     now   = datetime.now(timezone.utc)
-    lines = ["✈️ <b>Floating Island — расписание полётов</b>", ""]
+    lines = []
 
-    upcoming, past = [], []
     for slot in schedule:
         start_dt, end_dt, label, active = _slot_parts(slot, now)
-        if active:
-            upcoming.insert(0, (start_dt, f"🟡 <b>{label}  ← СЕЙЧАС В ВОЗДУХЕ</b>"))
-        elif end_dt < now:
-            past.append((start_dt, label))
+        if end_dt < now:
+            lines.append(f"<s>{label}</s>")
+        elif active:
+            lines.append(f"🟡 <b>{label} — в воздухе!</b>")
         else:
-            upcoming.append((start_dt, label))
+            lines.append(label)
 
-    if upcoming:
-        lines.append("🟢 <b>Предстоящие / текущие:</b>")
-        for _, lbl in upcoming:
-            lines.append(lbl if lbl.startswith("🟡") else f"  🛫 {lbl}")
-    else:
-        lines.append("🔴 <i>Предстоящих полётов пока нет</i>")
-
-    if past:
-        lines.append("")
-        lines.append("✅ <b>Прошедшие:</b>")
-        for _, lbl in past:
-            lines.append(f"  <s>{lbl}</s>")
-
-    lines.append("")
-    upd = datetime.now(DISPLAY_TZ).strftime("%d.%m.%Y %H:%M")
-    lines.append(f"<i>🔄 Обновлено: {upd} ({DISPLAY_TZ_NAME} UTC+{DISPLAY_UTC_OFFSET})</i>")
     return "\n".join(lines)
 
 
 def format_arrival_message(slot: dict) -> str:
-    start_dt = datetime.fromtimestamp(slot["startAt"] / 1000, tz=timezone.utc)
-    end_dt   = datetime.fromtimestamp(slot["endAt"]   / 1000, tz=timezone.utc)
-    start_l  = start_dt.astimezone(DISPLAY_TZ)
-    end_l    = end_dt.astimezone(DISPLAY_TZ)
-    return (
-        "🎈 <b>Шар прилетел!</b>\n\n"
-        f"Floating Island сейчас <b>в воздухе</b> до <b>{end_l.strftime('%H:%M')} ({DISPLAY_TZ_NAME})</b>.\n"
-        f"Начало: {start_l.strftime('%H:%M')} — Конец: {end_l.strftime('%H:%M')}\n\n"
-        "⚡ Успей слетать!"
-    )
+    end_dt = datetime.fromtimestamp(slot["endAt"] / 1000, tz=timezone.utc)
+    end_l  = end_dt.astimezone(DISPLAY_TZ)
+    return f"🎈 <b>Шар прилетел!</b>\n\nУспей слетать до {end_l.strftime('%H:%M')}!"
 
 
 def schedule_key(schedule: list[dict]) -> str:
