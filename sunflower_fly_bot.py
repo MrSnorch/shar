@@ -275,9 +275,17 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
         if end_dt < now:
             continue
 
-        # Рейс ещё не начался — ждём до startAt
+        # Рейс ещё не начался
         if start_dt > now:
             wait_sec = (start_dt - now).total_seconds()
+            max_wait = (EARLY_START_MIN + 1) * 60  # максимум N+1 минут сна внутри джоба
+            if wait_sec > max_wait:
+                # До рейса далеко — cron-job.org запустит скрипт вовремя, выходим
+                log.info(
+                    "Рейс через %.0f сек (%s UTC) — выхожу, cron-job.org разбудит за %d мин до старта",
+                    wait_sec, start_dt.strftime("%H:%M"), EARLY_START_MIN,
+                )
+                break
             log.info("Жду %.0f сек до старта рейса в %s UTC...",
                      wait_sec, start_dt.strftime("%H:%M"))
             _time.sleep(wait_sec)
@@ -460,15 +468,18 @@ def run() -> None:
         log.info("Расписание не изменилось, обновляю время...")
         edit_message(state["message_id"], text)
 
-    # 3) Сохраняем стейт до ожидания — message_id уже зафиксирован
-    save_state(state)
-
-    # 4) Ждём точного времени рейса если запустились раньше, потом уведомляем
-    _wait_and_notify(schedule, state)
-
-    # 5) Перепланируем cron-job.org на ближайшее событие (рейс или удаление)
+    # 3) Перепланируем cron-job.org на ближайшее событие (рейс или удаление)
     reschedule_cronjob(schedule, state)
 
+    # 4) Сохраняем стейт — message_id и время следующего запуска зафиксированы.
+    #    Это важно сделать ДО ожидания: если джоб прервётся, данные не потеряются.
+    save_state(state)
+
+    # 5) Если до рейса ≤ EARLY_START_MIN+1 мин — досыпаем и уведомляем.
+    #    Если дольше — _wait_and_notify сразу вернётся (cron разбудит вовремя).
+    _wait_and_notify(schedule, state)
+
+    # 6) Сохраняем стейт после уведомления (arrival_msg_id, notified_arrivals)
     save_state(state)
 
 
