@@ -475,7 +475,11 @@ def run() -> None:
     #    Если дольше — _wait_and_notify сразу вернётся (cron разбудит вовремя).
     _wait_and_notify(schedule, state)
 
-    # 6) Сохраняем стейт после уведомления (arrival_msg_id, notified_arrivals)
+    # 6) Если отправили уведомление — arrival_delete_ts теперь заполнен.
+    #    Перепланируем крон ещё раз, чтобы он запустился именно для удаления.
+    reschedule_cronjob(schedule, state)
+
+    # 7) Сохраняем стейт после уведомления (arrival_msg_id, notified_arrivals)
     save_state(state)
 
 
