@@ -27,6 +27,7 @@ jobs:
         env:
           TELEGRAM_TOKEN:      ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          SUNFLOWER_BEARER:    ${{ secrets.SUNFLOWER_BEARER }}
           CRONJOB_API_KEY:     ${{ secrets.CRONJOB_API_KEY }}
           CRONJOB_JOB_ID:      ${{ secrets.CRONJOB_JOB_ID }}
         run: python sunflower_fly_bot.py
