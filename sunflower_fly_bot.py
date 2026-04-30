@@ -34,6 +34,7 @@ DISPLAY_UTC_OFFSET   = 3
 DISPLAY_TZ_NAME      = "Kyiv"
 STATE_FILE           = "fly_bot_state.json"
 ARRIVAL_WINDOW_MIN   = 12   # окно «свежего» прилёта в минутах
+EARLY_START_MIN      = 2    # запускаемся за N минут до рейса
 FALLBACK_CHECK_HOURS = 6    # резервный интервал если рейсов нет
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -179,21 +180,37 @@ def edit_message(message_id: int, text: str) -> bool:
 
 # ─── Уведомления о прилёте ────────────────────────────────────────────────────
 
-def check_and_notify_arrivals(schedule: list[dict], state: dict) -> None:
+def _wait_and_notify(schedule: list[dict], state: dict) -> None:
+    """Ждёт точного времени старта ближайшего рейса, затем отправляет уведомление."""
+    import time as _time
+
     now      = datetime.now(timezone.utc)
     window   = timedelta(minutes=ARRIVAL_WINDOW_MIN)
     notified = set(state.get("notified_arrivals", []))
 
-    for slot in schedule:
+    for slot in sorted(schedule, key=lambda s: s["startAt"]):
         start_dt = datetime.fromtimestamp(slot["startAt"] / 1000, tz=timezone.utc)
         end_dt   = datetime.fromtimestamp(slot["endAt"]   / 1000, tz=timezone.utc)
         slot_id  = str(slot["startAt"])
 
-        if start_dt <= now <= end_dt and (now - start_dt) <= window:
-            if slot_id not in notified:
-                log.info("Шар в воздухе! Отправляю уведомление...")
-                send_message(format_arrival_message(slot))
-                notified.add(slot_id)
+        if slot_id in notified:
+            continue
+        if end_dt < now:
+            continue
+
+        # Рейс ещё не начался — ждём до startAt
+        if start_dt > now:
+            wait_sec = (start_dt - now).total_seconds()
+            log.info("Жду %.0f сек до старта рейса в %s UTC...",
+                     wait_sec, start_dt.strftime("%H:%M"))
+            _time.sleep(wait_sec)
+
+        # Рейс начался (или только что наступил после ожидания)
+        if start_dt <= datetime.now(timezone.utc) <= end_dt:
+            log.info("Шар прилетел! Отправляю уведомление...")
+            send_message(format_arrival_message(slot))
+            notified.add(slot_id)
+            break  # уведомляем только об одном рейсе за запуск
 
     current_ids = {str(s["startAt"]) for s in schedule}
     state["notified_arrivals"] = list(notified & current_ids)
@@ -217,8 +234,8 @@ def reschedule_cronjob(schedule: list[dict]) -> None:
     ])
 
     if upcoming:
-        next_dt = upcoming[0]
-        reason  = f"следующий рейс в {next_dt.strftime('%H:%M UTC')}"
+        next_dt = upcoming[0] - timedelta(minutes=EARLY_START_MIN)
+        reason  = f"следующий рейс в {upcoming[0].strftime('%H:%M UTC')} (запуск в {next_dt.strftime('%H:%M UTC')})"
     else:
         next_dt = fallback_dt
         reason  = f"нет рейсов → резервная проверка через {FALLBACK_CHECK_HOURS}ч"
@@ -282,8 +299,8 @@ def run() -> None:
     new_key = schedule_key(schedule)
     text    = format_schedule_message(schedule)
 
-    # 1) Уведомление о прилёте
-    check_and_notify_arrivals(schedule, state)
+    # 1) Ждём точного времени рейса если запустились раньше, потом уведомляем
+    _wait_and_notify(schedule, state)
 
     # 2) Закреплённое сообщение с расписанием
     if state["message_id"] is None:
