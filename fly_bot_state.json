@@ -1,0 +1,7 @@
+{
+  "message_id": 33,
+  "schedule_key": "[{\"s\": 1777579200000, \"e\": 1777581000000}, {\"s\": 1777609200000, \"e\": 1777611000000}, {\"s\": 1777639200000, \"e\": 1777641000000}]",
+  "notified_arrivals": [],
+  "arrival_msg_id": null,
+  "arrival_delete_ts": null
+}
