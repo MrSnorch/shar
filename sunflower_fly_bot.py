@@ -264,6 +264,62 @@ def check_and_notify_arrivals(schedule: list[dict], state: dict) -> None:
     state["notified_arrivals"] = list(notified & current_ids)
 
 
+
+# ─── Перепланирование cron-job.org ───────────────────────────────────────────
+
+def reschedule_cronjob(schedule: list[dict]) -> None:
+    """Обновляет расписание задания на cron-job.org.
+
+    Следующий запуск устанавливается на:
+    - точное время старта ближайшего рейса (если он в будущем), ИЛИ
+    - через FALLBACK_CHECK_HOURS если рейсов нет.
+    """
+    if not CRONJOB_API_KEY or not CRONJOB_JOB_ID:
+        log.debug("CRONJOB_API_KEY / CRONJOB_JOB_ID не заданы — пропускаю перепланирование")
+        return
+
+    now = datetime.now(timezone.utc)
+    fallback_dt = now + timedelta(hours=FALLBACK_CHECK_HOURS)
+
+    # Ищем ближайший будущий рейс
+    upcoming = []
+    for slot in schedule:
+        start_dt = datetime.fromtimestamp(slot["startAt"] / 1000, tz=timezone.utc)
+        if start_dt > now:
+            upcoming.append(start_dt)
+
+    if upcoming:
+        next_dt = min(upcoming)
+        reason  = f"следующий рейс в {next_dt.strftime('%H:%M UTC')}"
+    else:
+        next_dt = fallback_dt
+        reason  = f"нет рейсов → резервная проверка через {FALLBACK_CHECK_HOURS}ч"
+
+    # cron-job.org принимает конкретные значения полей расписания (UTC)
+    cron_schedule = {
+        "timezone": "UTC",
+        "minutes":  [next_dt.minute],
+        "hours":    [next_dt.hour],
+        "mdays":    [next_dt.day],
+        "months":   [next_dt.month],
+        "wdays":    [-1],          # -1 = любой день недели
+    }
+
+    url  = f"https://api.cron-job.org/jobs/{CRONJOB_JOB_ID}"
+    body = {"job": {"schedule": cron_schedule}}
+    headers = {
+        "Authorization": f"Bearer {CRONJOB_API_KEY}",
+        "Content-Type":  "application/json",
+    }
+
+    try:
+        resp = _requests.patch(url, json=body, headers=headers, timeout=10)
+        resp.raise_for_status()
+        log.info("cron-job.org перепланирован: %s → %s UTC (%s)",
+                 now.strftime("%H:%M"), next_dt.strftime("%d.%m %H:%M"), reason)
+    except Exception as e:
+        log.error("Ошибка обновления cron-job.org: %s", e)
+
 # ─── Главная функция (одиночный запуск) ──────────────────────────────────────
 
 def run() -> None:
@@ -311,6 +367,9 @@ def run() -> None:
         log.info("Расписание не изменилось")
         # Всё равно обновляем время в сообщении
         edit_message(state["message_id"], text)
+
+    # Перенастраиваем cron-job.org на точное время следующего рейса
+    reschedule_cronjob(schedule)
 
     save_state(state)
 
