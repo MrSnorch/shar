@@ -1,0 +1,39 @@
+name: Test Fly Bot (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      wait_sec:
+        description: "Через сколько секунд прилетит шар"
+        default: "10"
+      flight_sec:
+        description: "Длительность рейса (сек)"
+        default: "20"
+      delete_sec:
+        description: "Через сколько секунд удалить уведомление"
+        default: "15"
+
+jobs:
+  test-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run test
+        env:
+          TELEGRAM_TOKEN:      ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          WAIT_SEC:            ${{ inputs.wait_sec }}
+          FLIGHT_SEC:          ${{ inputs.flight_sec }}
+          DELETE_SEC:          ${{ inputs.delete_sec }}
+        run: python test_fly_bot.py
