@@ -197,7 +197,7 @@ def format_schedule_message(schedule: list[dict]) -> str:
 def format_arrival_message(slot: dict) -> str:
     end_dt = datetime.fromtimestamp(slot["endAt"] / 1000, tz=timezone.utc)
     end_l  = end_dt.astimezone(DISPLAY_TZ)
-    return f"🎈 <b>Шар прилетел! Успей слетать до {end_l.strftime('%H:%M')}!</b>"
+    return f"❤️ <b>Шар прилетел! Успей слетать до {end_l.strftime('%H:%M')}!</b>"
 
 
 def schedule_key(schedule: list[dict]) -> str:
