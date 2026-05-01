@@ -59,15 +59,11 @@ def tg(method: str, **kwargs) -> Optional[dict]:
         return None
 
 
-def send_message(text: str, pin: bool = False) -> Optional[int]:
+def send_message(text: str) -> Optional[int]:
     result = tg("sendMessage", chat_id=TELEGRAM_CHANNEL_ID, text=text, parse_mode="HTML")
     if result:
         msg_id = result["result"]["message_id"]
         log.info("Отправлено message_id=%d", msg_id)
-        if pin:
-            tg("pinChatMessage", chat_id=TELEGRAM_CHANNEL_ID,
-               message_id=msg_id, disable_notification=True)
-            log.info("Закреплено message_id=%d", msg_id)
         return msg_id
     return None
 
@@ -138,8 +134,8 @@ def run_test() -> None:
     log.info("=" * 50)
 
     # ── Шаг 1: закреплённое сообщение «ожидание» ──────────────────────────────
-    log.info("[1/5] Отправляю закреплённое сообщение (ближайший рейс)...")
-    pinned_msg_id = send_message(fmt_upcoming(start_dt, end_dt), pin=True)
+    log.info("[1/5] Отправляю сообщение с ближайшим рейсом (ID запоминаю для редактирования)...")
+    pinned_msg_id = send_message(fmt_upcoming(start_dt, end_dt))
     if not pinned_msg_id:
         log.error("Не удалось отправить закреплённое сообщение, выхожу")
         return
@@ -174,7 +170,7 @@ def run_test() -> None:
 
     log.info("=" * 50)
     log.info("ТЕСТ ЗАВЕРШЁН ✓")
-    log.info("Закреплённое сообщение (id=%d) показывает следующий рейс.", pinned_msg_id)
+    log.info("Сообщение (id=%d) показывает следующий рейс.", pinned_msg_id)
     log.info("=" * 50)
 
 

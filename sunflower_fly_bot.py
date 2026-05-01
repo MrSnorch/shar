@@ -222,14 +222,11 @@ def tg(method: str, **kwargs) -> Optional[dict]:
         return None
 
 
-def send_message(text: str, pin: bool = False) -> Optional[int]:
+def send_message(text: str) -> Optional[int]:
     result = tg("sendMessage", chat_id=TELEGRAM_CHANNEL_ID, text=text, parse_mode="HTML")
     if result:
         msg_id = result["result"]["message_id"]
         log.info("Отправлено message_id=%d", msg_id)
-        if pin:
-            tg("pinChatMessage", chat_id=TELEGRAM_CHANNEL_ID,
-               message_id=msg_id, disable_notification=True)
         return msg_id
     return None
 
@@ -444,7 +441,7 @@ def run() -> None:
     # 2) Закреплённое сообщение с расписанием — отправляем сразу
     if state["message_id"] is None:
         log.info("Первый запуск — отправляю сообщение...")
-        msg_id = send_message(text, pin=True)
+        msg_id = send_message(text)
         if msg_id:
             state["message_id"]   = msg_id
             state["schedule_key"] = new_key
@@ -455,14 +452,13 @@ def run() -> None:
             state["schedule_key"] = new_key
         else:
             log.warning("Не смог отредактировать — отправляю новое...")
-            msg_id = send_message(text, pin=True)
+            msg_id = send_message(text)
             if msg_id:
                 state["message_id"]   = msg_id
                 state["schedule_key"] = new_key
 
     else:
-        log.info("Расписание не изменилось, обновляю время...")
-        edit_message(state["message_id"], text)
+        log.info("Расписание не изменилось — пропускаю редактирование")
 
     # 3) Перепланируем cron-job.org на ближайшее событие (рейс или удаление)
     reschedule_cronjob(schedule, state)
