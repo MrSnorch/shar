@@ -307,7 +307,7 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
             msg_id = send_message(format_arrival_message(slot))
             notified.add(slot_id)
             if msg_id:
-                delete_after = datetime.now(timezone.utc) + timedelta(minutes=ARRIVAL_DELETE_MIN)
+                delete_after = start_dt + timedelta(minutes=ARRIVAL_DELETE_MIN)
                 state["arrival_msg_id"]    = msg_id
                 state["arrival_delete_ts"] = delete_after.timestamp()
                 log.info("Удаление запланировано на %s UTC", delete_after.strftime("%H:%M"))
