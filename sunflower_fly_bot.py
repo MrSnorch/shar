@@ -256,9 +256,12 @@ def edit_message(message_id: int, text: str) -> bool:
 # ─── Уведомления о прилёте ────────────────────────────────────────────────────
 
 def _wait_and_notify(schedule: list[dict], state: dict) -> None:
-    """Отправляет уведомление о прилёте если рейс активен прямо сейчас.
-    Сон внутри джоба убран — cron-job.org запускает скрипт точно в нужный момент.
+    """Отправляет уведомление о прилёте.
+    Если до рейса > (EARLY_START_MIN+1) мин — выходим, cron-job.org разбудит точно в нужный момент.
+    Если мы уже в окне запуска (≤ EARLY_START_MIN+1 мин) — досыпаем оставшиеся секунды и уведомляем.
     """
+    import time as _time
+
     now      = datetime.now(timezone.utc)
     notified = set(state.get("notified_arrivals", []))
 
@@ -272,17 +275,27 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
         if end_dt < now:
             continue
 
-        # Рейс ещё не начался — cron-job.org запустит скрипт за EARLY_START_MIN мин,
-        # к тому моменту рейс будет активен. Выходим без сна.
         if start_dt > now:
-            log.info(
-                "Рейс через %.0f сек (%s UTC) — выхожу, cron-job.org разбудит за %d мин до старта",
-                (start_dt - now).total_seconds(), start_dt.strftime("%H:%M"), EARLY_START_MIN,
-            )
-            break
+            wait_sec = (start_dt - now).total_seconds()
+            max_wait = (EARLY_START_MIN + 1) * 60  # окно: N+1 минута
 
-        # Рейс активен прямо сейчас
-        if start_dt <= now <= end_dt:
+            if wait_sec > max_wait:
+                # До рейса далеко — cron-job.org запустит скрипт вовремя, выходим
+                log.info(
+                    "Рейс через %.0f сек (%s UTC) — выхожу, cron-job.org разбудит за %d мин до старта",
+                    wait_sec, start_dt.strftime("%H:%M"), EARLY_START_MIN,
+                )
+                break
+
+            # Мы в окне запуска (≤ EARLY_START_MIN+1 мин) — досыпаем и уведомляем
+            log.info(
+                "В окне запуска (%.0f сек до рейса %s UTC) — жду и отправлю уведомление...",
+                wait_sec, start_dt.strftime("%H:%M"),
+            )
+            _time.sleep(wait_sec)
+
+        # Рейс активен прямо сейчас (или только что наступил после ожидания)
+        if start_dt <= datetime.now(timezone.utc) <= end_dt:
             # Шаг 3 (как в тест-скрипте): редактируем закреп на «❤️ прилетел!»
             pinned_id = state.get("message_id")
             if pinned_id:
@@ -360,6 +373,15 @@ def reschedule_cronjob(schedule: list[dict], state: dict) -> None:
     else:
         next_dt = fallback_dt
         reason  = f"нет рейсов → резервная проверка через {FALLBACK_CHECK_HOURS}ч"
+
+    # Гарантируем что next_dt всегда в будущем — иначе cron-job.org не сработает
+    min_future = now + timedelta(minutes=1)
+    if next_dt <= now:
+        log.warning(
+            "Расчётное время запуска %s UTC уже в прошлом — сдвигаю на следующую минуту (%s UTC)",
+            next_dt.strftime("%H:%M"), min_future.strftime("%H:%M"),
+        )
+        next_dt = min_future
 
     try:
         resp = _requests.patch(
