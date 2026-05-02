@@ -256,9 +256,9 @@ def edit_message(message_id: int, text: str) -> bool:
 # ─── Уведомления о прилёте ────────────────────────────────────────────────────
 
 def _wait_and_notify(schedule: list[dict], state: dict) -> None:
-    """Отправляет уведомление о прилёте и планирует его удаление через следующий запуск."""
-    import time as _time
-
+    """Отправляет уведомление о прилёте если рейс активен прямо сейчас.
+    Сон внутри джоба убран — cron-job.org запускает скрипт точно в нужный момент.
+    """
     now      = datetime.now(timezone.utc)
     notified = set(state.get("notified_arrivals", []))
 
@@ -272,23 +272,17 @@ def _wait_and_notify(schedule: list[dict], state: dict) -> None:
         if end_dt < now:
             continue
 
-        # Рейс ещё не начался
+        # Рейс ещё не начался — cron-job.org запустит скрипт за EARLY_START_MIN мин,
+        # к тому моменту рейс будет активен. Выходим без сна.
         if start_dt > now:
-            wait_sec = (start_dt - now).total_seconds()
-            max_wait = (EARLY_START_MIN + 1) * 60  # максимум N+1 минут сна внутри джоба
-            if wait_sec > max_wait:
-                # До рейса далеко — cron-job.org запустит скрипт вовремя, выходим
-                log.info(
-                    "Рейс через %.0f сек (%s UTC) — выхожу, cron-job.org разбудит за %d мин до старта",
-                    wait_sec, start_dt.strftime("%H:%M"), EARLY_START_MIN,
-                )
-                break
-            log.info("Жду %.0f сек до старта рейса в %s UTC...",
-                     wait_sec, start_dt.strftime("%H:%M"))
-            _time.sleep(wait_sec)
+            log.info(
+                "Рейс через %.0f сек (%s UTC) — выхожу, cron-job.org разбудит за %d мин до старта",
+                (start_dt - now).total_seconds(), start_dt.strftime("%H:%M"), EARLY_START_MIN,
+            )
+            break
 
-        # Рейс начался (или только что наступил после ожидания)
-        if start_dt <= datetime.now(timezone.utc) <= end_dt:
+        # Рейс активен прямо сейчас
+        if start_dt <= now <= end_dt:
             # Шаг 3 (как в тест-скрипте): редактируем закреп на «❤️ прилетел!»
             pinned_id = state.get("message_id")
             if pinned_id:
