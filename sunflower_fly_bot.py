@@ -324,6 +324,15 @@ def _maybe_delete_arrival(state: dict, schedule: Optional[list] = None) -> None:
     if not msg_id or not delete_ts:
         return
 
+    remaining = delete_ts - datetime.now(timezone.utc).timestamp()
+
+    # Если до удаления <= 90 сек — досыпаем и удаляем прямо сейчас.
+    # cron-job.org имеет точность 1 минута, короткие интервалы обрабатываем здесь.
+    if 0 < remaining <= 90:
+        import time as _time
+        log.info("Удаление уведомления через %.0f сек — жду...", remaining)
+        _time.sleep(remaining)
+
     if datetime.now(timezone.utc).timestamp() >= delete_ts:
         log.info("Удаляю уведомление о прилёте (message_id=%d)...", msg_id)
         delete_message(msg_id)
@@ -333,7 +342,6 @@ def _maybe_delete_arrival(state: dict, schedule: Optional[list] = None) -> None:
         # без двойного редактирования и ошибки "message is not modified"
         state["schedule_key"] = None
     else:
-        remaining = delete_ts - datetime.now(timezone.utc).timestamp()
         log.info("Уведомление о прилёте будет удалено через %.0f сек", remaining)
 
 
