@@ -1,9 +1,7 @@
 name: Sunflower Fly Bot
 
 on:
-  workflow_dispatch:          # вызывается вручную и через cron-job.org
-  schedule:
-    - cron: "0 */6 * * *"    # резервный запуск раз в 6 часов
+  workflow_dispatch:          # вызывается только через cron-job.org или вручную
 
 jobs:
   run-bot:
