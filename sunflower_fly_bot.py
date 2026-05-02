@@ -326,9 +326,9 @@ def _maybe_delete_arrival(state: dict, schedule: Optional[list] = None) -> None:
 
     remaining = delete_ts - datetime.now(timezone.utc).timestamp()
 
-    # Если до удаления <= 90 сек — досыпаем и удаляем прямо сейчас.
-    # cron-job.org имеет точность 1 минута, короткие интервалы обрабатываем здесь.
-    if 0 < remaining <= 90:
+    # Если до удаления <= (EARLY_START_MIN+1)*60 сек — досыпаем и удаляем прямо сейчас.
+    # Крон запускается за EARLY_START_MIN минут до цели, поэтому окно ожидания должно их покрывать.
+    if 0 < remaining <= (EARLY_START_MIN + 1) * 60:
         import time as _time
         log.info("Удаление уведомления через %.0f сек — жду...", remaining)
         _time.sleep(remaining)
@@ -372,9 +372,10 @@ def reschedule_cronjob(schedule: list[dict], state: dict) -> None:
 
     delete_ts = state.get("arrival_delete_ts")
     if delete_ts:
-        delete_dt = datetime.fromtimestamp(delete_ts, tz=timezone.utc)
+        delete_dt        = datetime.fromtimestamp(delete_ts, tz=timezone.utc)
+        delete_launch_dt = delete_dt - timedelta(minutes=EARLY_START_MIN)
         if delete_dt > now:
-            candidates.append((delete_dt, f"удаление уведомления в {delete_dt.strftime('%H:%M UTC')}"))
+            candidates.append((delete_launch_dt, f"удаление уведомления в {delete_dt.strftime('%H:%M UTC')} (запуск в {delete_launch_dt.strftime('%H:%M UTC')})"))
 
     if candidates:
         next_dt, reason = min(candidates, key=lambda x: x[0])
