@@ -222,6 +222,16 @@ def tg(method: str, **kwargs) -> Optional[dict]:
         return None
 
 
+def get_pinned_message_id() -> Optional[int]:
+    """Возвращает message_id текущего закреплённого сообщения в канале."""
+    result = tg("getChat", chat_id=TELEGRAM_CHANNEL_ID)
+    if result:
+        pinned = result.get("result", {}).get("pinned_message")
+        if pinned:
+            return pinned["message_id"]
+    return None
+
+
 def send_message(text: str) -> Optional[int]:
     result = tg("sendMessage", chat_id=TELEGRAM_CHANNEL_ID, text=text, parse_mode="HTML")
     if result:
@@ -473,14 +483,19 @@ def run() -> None:
     elif arrival_just_deleted or new_key != state["schedule_key"]:
         if arrival_just_deleted:
             log.info("Шар улетел — восстанавливаю закреп на расписание...")
+            # Берём реальный pinned message из Telegram — state["message_id"] мог устареть
+            real_pinned_id = get_pinned_message_id()
+            if real_pinned_id and real_pinned_id != state["message_id"]:
+                log.info("Реальный закреп (id=%d) отличается от стейта (id=%d) — редактирую реальный",
+                         real_pinned_id, state["message_id"])
+                state["message_id"] = real_pinned_id
         else:
             log.info("Расписание изменилось — обновляю сообщение...")
         if edit_message(state["message_id"], text):
             state["schedule_key"] = new_key
         else:
-            # edit вернул False — либо сетевая ошибка, либо текст уже такой же.
-            # В обоих случаях НЕ отправляем новое сообщение: закреп не должен меняться.
-            log.warning("Не смог отредактировать закреп (уже актуален или сетевая ошибка) — пропускаю")
+            # "not modified" означает что содержимое уже правильное — это успех, не ошибка
+            log.info("Закреп уже содержит актуальный текст — ок")
             state["schedule_key"] = new_key
 
     else:
