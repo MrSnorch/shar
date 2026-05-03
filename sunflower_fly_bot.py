@@ -338,11 +338,10 @@ def _maybe_delete_arrival(state: dict, schedule: Optional[list] = None) -> None:
         delete_message(msg_id)
         state["arrival_msg_id"]    = None
         state["arrival_delete_ts"] = None
-        # Сбрасываем schedule_key: run() сам обновит закреп на следующий рейс,
-        # без двойного редактирования и ошибки "message is not modified"
-        state["schedule_key"] = None
+        return True   # сигнал для run(): нужно восстановить закреп на расписание
     else:
         log.info("Уведомление о прилёте будет удалено через %.0f сек", remaining)
+    return False
 
 
 # ─── cron-job.org перепланирование ───────────────────────────────────────────
@@ -461,7 +460,7 @@ def run() -> None:
     text    = format_schedule_message(schedule)
 
     # 1) Удаляем уведомление о прилёте если пришло время
-    _maybe_delete_arrival(state, schedule)
+    arrival_just_deleted = _maybe_delete_arrival(state, schedule)
 
     # 2) Закреплённое сообщение с расписанием — отправляем сразу
     if state["message_id"] is None:
@@ -471,16 +470,18 @@ def run() -> None:
             state["message_id"]   = msg_id
             state["schedule_key"] = new_key
 
-    elif new_key != state["schedule_key"]:
-        log.info("Расписание изменилось — обновляю сообщение...")
+    elif arrival_just_deleted or new_key != state["schedule_key"]:
+        if arrival_just_deleted:
+            log.info("Шар улетел — восстанавливаю закреп на расписание...")
+        else:
+            log.info("Расписание изменилось — обновляю сообщение...")
         if edit_message(state["message_id"], text):
             state["schedule_key"] = new_key
         else:
-            log.warning("Не смог отредактировать — отправляю новое...")
-            msg_id = send_message(text)
-            if msg_id:
-                state["message_id"]   = msg_id
-                state["schedule_key"] = new_key
+            # edit вернул False — либо сетевая ошибка, либо текст уже такой же.
+            # В обоих случаях НЕ отправляем новое сообщение: закреп не должен меняться.
+            log.warning("Не смог отредактировать закреп (уже актуален или сетевая ошибка) — пропускаю")
+            state["schedule_key"] = new_key
 
     else:
         log.info("Расписание не изменилось — пропускаю редактирование")
