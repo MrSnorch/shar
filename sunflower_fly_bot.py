@@ -173,14 +173,15 @@ def _slot_parts(slot: dict, now: datetime):
     return start_dt, end_dt, label, start_dt <= now <= end_dt
 
 
-def format_schedule_message(schedule: list[dict]) -> str:
+def format_schedule_message(schedule: list[dict], skip_active: bool = False) -> str:
     now = datetime.now(timezone.utc)
 
-    # Сначала ищем активный рейс
-    for slot in sorted(schedule, key=lambda s: s["startAt"]):
-        start_dt, end_dt, label, active = _slot_parts(slot, now)
-        if active:
-            return f"❤️ <b>{label} — прилетел!</b>"
+    # Сначала ищем активный рейс (если не попросили пропустить)
+    if not skip_active:
+        for slot in sorted(schedule, key=lambda s: s["startAt"]):
+            start_dt, end_dt, label, active = _slot_parts(slot, now)
+            if active:
+                return f"❤️ <b>{label} — прилетел!</b>"
 
     # Иначе — ближайший предстоящий
     upcoming = sorted(
@@ -483,6 +484,9 @@ def run() -> None:
     elif arrival_just_deleted or new_key != state["schedule_key"]:
         if arrival_just_deleted:
             log.info("Шар улетел — восстанавливаю закреп на расписание...")
+            # Пересчитываем текст с skip_active=True — рейс ещё может быть "активным" по времени,
+            # но уведомление уже удалено, нужно показать следующий рейс
+            text = format_schedule_message(schedule, skip_active=True)
             # Берём реальный pinned message из Telegram — state["message_id"] мог устареть
             real_pinned_id = get_pinned_message_id()
             if real_pinned_id and real_pinned_id != state["message_id"]:
@@ -494,7 +498,6 @@ def run() -> None:
         if edit_message(state["message_id"], text):
             state["schedule_key"] = new_key
         else:
-            # "not modified" означает что содержимое уже правильное — это успех, не ошибка
             log.info("Закреп уже содержит актуальный текст — ок")
             state["schedule_key"] = new_key
 
