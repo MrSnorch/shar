@@ -4,6 +4,6 @@
   "notified_arrivals": [
     "1777969200000"
   ],
-  "arrival_msg_id": 62,
-  "arrival_delete_ts": 1777971000.0
+  "arrival_msg_id": null,
+  "arrival_delete_ts": null
 }
